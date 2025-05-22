@@ -49,98 +49,112 @@ class KT_Cigar_Enhanced_Matcher {
     * Constructor
     */
     public function __construct() {
-		
-		
-		
-		
-        // Set data file path
-        $this->data_file_path = WP_CONTENT_DIR . '/cigar-mappings-data.php';
-		
-	   // CRITICAL: Load KT_Cigar_Mappings IMMEDIATELY - no delays
-    $this->initialize_kt_mappings_now();	
-        
- 
-        // Add admin menu
-        add_action("admin_menu", array($this, "add_admin_menu"));
-        // Register AJAX handlers
-        add_action("wp_ajax_kt_cigar_matcher_upload_csv", array($this, "ajax_upload_supplier_csv"));
-        add_action("wp_ajax_kt_cigar_matcher_check_status", array($this, "ajax_check_status"));
-        add_action("wp_ajax_kt_cigar_matcher_process_batch", array($this, "ajax_process_batch_products"));
-        add_action("wp_ajax_kt_cigar_matcher_save_mapping", array($this, "ajax_save_mapping"));
-        add_action("wp_ajax_kt_cigar_matcher_delete_mapping", array($this, "ajax_delete_mapping"));
-        add_action("wp_ajax_kt_cigar_matcher_export_mappings", array($this, "ajax_export_mappings"));
-        add_action("wp_ajax_kt_cigar_matcher_save_template", array($this, "ajax_save_template"));
-        add_action("wp_ajax_kt_cigar_matcher_load_template", array($this, "ajax_load_template"));
-        add_action("wp_ajax_kt_cigar_matcher_delete_template", array($this, "ajax_delete_template"));
-        add_action("wp_ajax_kt_cigar_matcher_list_templates", array($this, "ajax_list_templates"));
-        add_action("wp_ajax_kt_cigar_matcher_search_sku", array($this, "ajax_search_sku"));
-        add_action("wp_ajax_kt_cigar_matcher_search_brand", array($this, "ajax_search_by_brand"));
-        add_action("wp_ajax_kt_cigar_matcher_quick_map", array($this, "ajax_quick_map"));
-        add_action("wp_ajax_kt_cigar_matcher_toggle_logging", array($this, "ajax_toggle_logging"));
-		    add_action('admin_init', array($this, 'init_database_preprocessing'));
-add_action("wp_ajax_kt_cigar_matcher_debug_keywords", array($this, "ajax_debug_keywords"));
-add_action("wp_ajax_kt_cigar_matcher_clear_cache", array($this, "ajax_clear_cache"));
-		
-add_action("wp_ajax_kt_cigar_matcher_diagnose_brand", array($this, "ajax_diagnose_brand_extraction"));		
-
-add_action("wp_ajax_kt_cigar_matcher_debug_brand_comparison", array($this, "ajax_debug_brand_comparison")); // ADD THIS LINE		
-
-/**
- * ADD THIS AJAX HANDLER to your constructor
- */
-add_action("wp_ajax_kt_cigar_matcher_check_keywords_table", array($this, "ajax_check_keywords_table"));
-
-add_action("wp_ajax_kt_cigar_matcher_get_db_keywords", array($this, "ajax_get_db_keywords"));		
-        
-        // Create tables on activation
-        register_activation_hook(__FILE__, array($this, "create_tables"));
-        
-        // Check if data file exists
-        if (!file_exists($this->data_file_path)) {
-            add_action('admin_notices', function() {
-                echo '<div class="notice notice-error"><p>KT Cigar Matcher: Data file not found at ' . esc_html($this->data_file_path) . '</p></div>';
-            });
-        }
-        
-        // Load logging preference from option
-        $this->enable_logging = get_option('kt_cigar_matcher_enable_logging', true);
+    // Set data file path
+    $this->data_file_path = WP_CONTENT_DIR . '/cigar-mappings-data.php';
+    
+    // Delay KT_Cigar_Mappings initialization until after all plugins loaded
+    add_action('plugins_loaded', array($this, 'initialize_kt_mappings_now'), 20);
+    
+    // Add admin menu
+    add_action("admin_menu", array($this, "add_admin_menu"));
+    // Register AJAX handlers
+    add_action("wp_ajax_kt_cigar_matcher_upload_csv", array($this, "ajax_upload_supplier_csv"));
+    add_action("wp_ajax_kt_cigar_matcher_check_status", array($this, "ajax_check_status"));
+    add_action("wp_ajax_kt_cigar_matcher_process_batch", array($this, "ajax_process_batch_products"));
+    add_action("wp_ajax_kt_cigar_matcher_save_mapping", array($this, "ajax_save_mapping"));
+    add_action("wp_ajax_kt_cigar_matcher_delete_mapping", array($this, "ajax_delete_mapping"));
+    add_action("wp_ajax_kt_cigar_matcher_export_mappings", array($this, "ajax_export_mappings"));
+    add_action("wp_ajax_kt_cigar_matcher_save_template", array($this, "ajax_save_template"));
+    add_action("wp_ajax_kt_cigar_matcher_load_template", array($this, "ajax_load_template"));
+    add_action("wp_ajax_kt_cigar_matcher_delete_template", array($this, "ajax_delete_template"));
+    add_action("wp_ajax_kt_cigar_matcher_list_templates", array($this, "ajax_list_templates"));
+    add_action("wp_ajax_kt_cigar_matcher_search_sku", array($this, "ajax_search_sku"));
+    add_action("wp_ajax_kt_cigar_matcher_search_brand", array($this, "ajax_search_by_brand"));
+    add_action("wp_ajax_kt_cigar_matcher_quick_map", array($this, "ajax_quick_map"));
+    add_action("wp_ajax_kt_cigar_matcher_toggle_logging", array($this, "ajax_toggle_logging"));
+    add_action('admin_init', array($this, 'init_database_preprocessing'));
+    add_action("wp_ajax_kt_cigar_matcher_debug_keywords", array($this, "ajax_debug_keywords"));
+    add_action("wp_ajax_kt_cigar_matcher_clear_cache", array($this, "ajax_clear_cache"));
+    add_action("wp_ajax_kt_cigar_matcher_diagnose_brand", array($this, "ajax_diagnose_brand_extraction"));
+    add_action("wp_ajax_kt_cigar_matcher_debug_brand_comparison", array($this, "ajax_debug_brand_comparison"));
+    add_action("wp_ajax_kt_cigar_matcher_check_keywords_table", array($this, "ajax_check_keywords_table"));
+    add_action("wp_ajax_kt_cigar_matcher_get_db_keywords", array($this, "ajax_get_db_keywords"));
+    
+    // Create tables on activation
+    register_activation_hook(__FILE__, array($this, "create_tables"));
+    
+    // Check if data file exists
+    if (!file_exists($this->data_file_path)) {
+        add_action('admin_notices', function() {
+            echo '<div class="notice notice-error"><p>KT Cigar Matcher: Data file not found at ' . esc_html($this->data_file_path) . '</p></div>';
+        });
     }
-  
-
+    
+    // Load logging preference from option
+    $this->enable_logging = get_option('kt_cigar_matcher_enable_logging', true);
+}
+/**
+ * Ensure KT_Cigar_Mappings is loaded before processing
+ */
+private function ensure_kt_mappings_loaded() {
+    if (!class_exists('KT_Cigar_Mappings')) {
+        $this->log_debug("KT_Cigar_Mappings class not found, attempting to load...");
+        return false;
+    }
+    
+    // Check if required methods exist
+    $required_methods = array('process_supplier_product', 'process_internal_product', 'get_main_brand');
+    foreach ($required_methods as $method) {
+        if (!method_exists('KT_Cigar_Mappings', $method)) {
+            $this->log_debug("Required method $method not found in KT_Cigar_Mappings");
+            return false;
+        }
+    }
+    
+    return true;
+}
 /**
  * Initialize KT_Cigar_Mappings immediately - no hooks, no delays  
  */
-private function initialize_kt_mappings_now() {
-    if (class_exists('KT_Cigar_Mappings')) {
-        if (method_exists('KT_Cigar_Mappings', 'init')) {
-            KT_Cigar_Mappings::init(true); // Force initialization
-            $this->log_debug("KT_Cigar_Mappings initialized EARLY in constructor");
-            
-            // Verify the problematic method exists
-            if (method_exists('KT_Cigar_Mappings', 'get_main_brand')) {
-                $this->log_debug("SUCCESS: get_main_brand method confirmed available");
-            } else {
-                $this->log_debug("WARNING: get_main_brand method still not found after init");
-            }
-            
-            // Verify data file loaded
-            if (method_exists('KT_Cigar_Mappings', 'get_data_file')) {
-                $data_file = KT_Cigar_Mappings::get_data_file();
-                if (!empty($data_file['brands'])) {
-                    $cuban_count = count($data_file['brands']['cuban'] ?? []);
-                    $non_cuban_count = count($data_file['brands']['non_cuban'] ?? []);
-                    $this->log_debug("Data file loaded EARLY: Cuban=$cuban_count, Non-Cuban=$non_cuban_count");
-                }
-            }
-        } else {
-            $this->log_debug("CRITICAL ERROR: KT_Cigar_Mappings init method not found");
-        }
-    } else {
-        $this->log_debug("CRITICAL ERROR: KT_Cigar_Mappings class not found in constructor");
+
+public function initialize_kt_mappings_now() {
+
+    // Check if KT_Cigar_Mappings exists at all
+    if (!class_exists('KT_Cigar_Mappings')) {
+        $this->log_debug("CRITICAL: KT_Cigar_Mappings class does not exist - plugin dependency missing");
+        return false;
     }
-}	
-	
-	
+    
+    // Try to initialize it
+    try {
+        if (method_exists('KT_Cigar_Mappings', 'init')) {
+            KT_Cigar_Mappings::init(true);
+            $this->log_debug("KT_Cigar_Mappings::init() called successfully");
+        }
+        
+        // Verify critical methods exist
+        $missing_methods = array();
+        $required_methods = array('get_main_brand', 'process_supplier_product', 'process_internal_product');
+        
+        foreach ($required_methods as $method) {
+            if (!method_exists('KT_Cigar_Mappings', $method)) {
+                $missing_methods[] = $method;
+            }
+        }
+        
+        if (!empty($missing_methods)) {
+            $this->log_debug("CRITICAL: Missing methods: " . implode(', ', $missing_methods));
+            return false;
+        }
+        
+        $this->log_debug("SUCCESS: All required KT_Cigar_Mappings methods found");
+        return true;
+        
+    } catch (Exception $e) {
+        $this->log_debug("ERROR initializing KT_Cigar_Mappings: " . $e->getMessage());
+        return false;
+    }
+}
 	
 	
 	
@@ -3974,30 +3988,33 @@ private function handle_existing_mapping($existing_mapping, $result) {
 
 	private function process_product_with_mappings($product_title) {
     // Ensure KT_Cigar_Mappings is loaded
-    $this->ensure_kt_mappings_loaded();
+    if (!$this->ensure_kt_mappings_loaded()) {
+        $this->log_debug("KT_Cigar_Mappings not available, using fallback for: $product_title");
+        return array(
+            "title" => $product_title,
+            "keywords" => array("FULL:" . strtolower($product_title)),
+            "brand" => null,
+            "model" => null
+        );
+    }
     
-    if (class_exists('KT_Cigar_Mappings')) {
+    try {
         $processed_product = KT_Cigar_Mappings::process_supplier_product($product_title);
-		
-		
-		
-        $this->log_debug("KT_Cigar_Mappings extracted " . count($processed_product["keywords"]) . " keywords");
+        $this->log_debug("KT_Cigar_Mappings extracted " . count($processed_product["keywords"] ?? []) . " keywords");
         
         // CRITICAL DEBUG: Log what brand was extracted
         $extracted_brand = $processed_product["brand"] ?? "NONE";
         $this->log_debug("BRAND EXTRACTION DEBUG: Title='$product_title' -> Extracted Brand='$extracted_brand'");
         
-        // If brand seems wrong, log the full processing result
-        if (!empty($extracted_brand) && $extracted_brand !== 'davidoff' && stripos($product_title, '大卫杜夫') !== false) {
-            $this->log_debug("WRONG BRAND DETECTED: Expected 'davidoff' for title with '大卫杜夫', got '$extracted_brand'");
-            $this->log_debug("Full processing result: " . json_encode($processed_product));
-        }
-        
         return $processed_product;
-    } else {
-        // Fallback - this should rarely happen
-        $this->log_debug("KT_Cigar_Mappings not available, using fallback");
-        return array("keywords" => array("FULL:" . strtolower($product_title)));
+    } catch (Exception $e) {
+        $this->log_debug("ERROR in KT_Cigar_Mappings processing: " . $e->getMessage());
+        return array(
+            "title" => $product_title,
+            "keywords" => array("FULL:" . strtolower($product_title)),
+            "brand" => null,
+            "model" => null
+        );
     }
 }
 
