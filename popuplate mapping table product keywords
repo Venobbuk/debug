@@ -1,0 +1,133 @@
+
+// Process ALL products in one go (may take a few minutes)
+function populate_all_kt_cigar_keywords() {
+    global $wpdb;
+    
+    $master_table = 'xwz_master_products';
+    $keywords_table = 'xwz_kt_cigar_processed_keywords';
+    
+    // Get ALL cigar products
+    $products = $wpdb->get_results("
+        SELECT id, sku, product_title, brand, seat_row, seat_number 
+        FROM $master_table 
+        WHERE (product_type = 'cigar' OR product_type = '') 
+        ORDER BY brand ASC, sku ASC
+    ");
+    
+    if (empty($products)) {
+        error_log("KT Cigar: No products found to process");
+        return;
+    }
+    
+    error_log("KT Cigar: Starting to process " . count($products) . " products...");
+    
+    $processed_count = 0;
+    $failed_count = 0;
+    
+    foreach ($products as $product) {
+        // Build dimensions string
+        $dimensions = "";
+        if (!empty($product->seat_row) || !empty($product->seat_number)) {
+            $dimensions = (!empty($product->seat_row) ? $product->seat_row : "") . "/" . 
+                          (!empty($product->seat_number) ? $product->seat_number : "");
+        }
+        
+        // Extract keywords using KT_Cigar_Mappings
+        $keywords = array();
+        $keyword_count = 0;
+        
+        if (class_exists('KT_Cigar_Mappings')) {
+            try {
+                $processed = KT_Cigar_Mappings::process_internal_product(
+                    $product->sku,
+                    $product->product_title,
+                    $dimensions
+                );
+                
+                if (!empty($processed["keywords"]) && is_array($processed["keywords"])) {
+                    $keywords = $processed["keywords"];
+                    $keyword_count = count($keywords);
+                } else {
+                    // Fallback keywords
+                    $keywords = array("FULL:" . strtolower($product->product_title));
+                    $keyword_count = 1;
+                }
+            } catch (Exception $e) {
+                error_log("KT Cigar: Error processing " . $product->sku . ": " . $e->getMessage());
+                $keywords = array("FULL:" . strtolower($product->product_title));
+                $keyword_count = 1;
+                $failed_count++;
+            }
+        } else {
+            error_log("KT Cigar: KT_Cigar_Mappings not available for " . $product->sku);
+            $keywords = array("FULL:" . strtolower($product->product_title));
+            $keyword_count = 1;
+            $failed_count++;
+        }
+        
+        // Insert or update in keywords table
+        $existing = $wpdb->get_var($wpdb->prepare("SELECT id FROM $keywords_table WHERE sku = %s", $product->sku));
+        
+        if ($existing) {
+            // Update existing
+            $result = $wpdb->update(
+                $keywords_table,
+                array(
+                    'product_title' => $product->product_title,
+                    'brand' => $product->brand,
+                    'seat_row' => $product->seat_row,
+                    'seat_number' => $product->seat_number,
+                    'keywords' => json_encode($keywords),
+                    'keyword_count' => $keyword_count
+                ),
+                array('sku' => $product->sku),
+                array('%s', '%s', '%s', '%s', '%s', '%d'),
+                array('%s')
+            );
+        } else {
+            // Insert new
+            $result = $wpdb->insert(
+                $keywords_table,
+                array(
+                    'sku' => $product->sku,
+                    'product_id' => $product->id,
+                    'product_title' => $product->product_title,
+                    'brand' => $product->brand,
+                    'seat_row' => $product->seat_row,
+                    'seat_number' => $product->seat_number,
+                    'keywords' => json_encode($keywords),
+                    'keyword_count' => $keyword_count
+                ),
+                array('%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d')
+            );
+        }
+        
+        if ($result !== false) {
+            $processed_count++;
+            if ($processed_count % 100 == 0) {
+                error_log("KT Cigar: Processed $processed_count products so far...");
+            }
+        } else {
+            error_log("KT Cigar: Failed to save " . $product->sku . ": " . $wpdb->last_error);
+            $failed_count++;
+        }
+    }
+    
+    error_log("KT Cigar: COMPLETED! Processed: $processed_count, Failed: $failed_count, Total: " . count($products));
+    
+    // Show some sample results
+    $samples = $wpdb->get_results("SELECT sku, keyword_count FROM $keywords_table ORDER BY keyword_count DESC LIMIT 5");
+    foreach ($samples as $sample) {
+        error_log("KT Cigar: Sample - {$sample->sku}: {$sample->keyword_count} keywords");
+    }
+    
+    return array(
+        'total' => count($products),
+        'processed' => $processed_count,
+        'failed' => $failed_count
+    );
+}
+
+// RUN THE PROCESSING
+$result = populate_all_kt_cigar_keywords();
+error_log("KT Cigar: Final result - " . json_encode($result));
