@@ -236,6 +236,13 @@ private function get_keywords_from_table($sku) {
         $this->log_debug("Keywords table doesn't exist, using fallback for SKU: $sku");
         return array("FULL:" . strtolower($sku));
     }
+	// Also check if table has any data
+$row_count = $wpdb->get_var("SELECT COUNT(*) FROM $keywords_table");
+if ($row_count == 0) {
+    $this->log_debug("Keywords table is empty, needs population");
+    // Optionally trigger a rebuild here
+    return $this->get_potential_database_matches_cache($processed_product);
+}
     
     // Get keywords for this SKU
     $result = $wpdb->get_var($wpdb->prepare(
@@ -1592,7 +1599,24 @@ function displayBatchResults(results) {
         // Product title cell
         let titleCell = $("<td>").addClass("supplier-title-cell");
         titleCell.append($("<div>").addClass("supplier-title").text(result.product_title));
-        
+        // Add product image if available
+if (result.product_image_url) {
+    let imageDiv = $("<div>").addClass("supplier-image").css({
+        "margin-top": "5px"
+    });
+    let img = $("<img>").attr("src", result.product_image_url).css({
+        "max-width": "100px",
+        "max-height": "100px",
+        "cursor": "pointer"
+    }).on("click", function() {
+        window.open(result.product_image_url, "_blank");
+    });
+    imageDiv.append(img);
+    titleCell.append(imageDiv);
+}
+		
+		
+		
         // Add supplier keywords container
         if (result.matched_terms && result.matched_terms.length > 0) {
             let keywordsContainer = $("<div>").addClass("product-keywords-container").css("display", "none");
@@ -3874,13 +3898,15 @@ private function process_supplier_product($supplier_product, $supplier_name) {
     $this->log_debug("Processing supplier product: $product_id - $product_title");
     
     // Initialize result structure
-    $result = array(
-        "product_id" => $product_id,
-        "product_title" => $product_title,
-        "match_status" => "no_match",
-        "best_match" => null,
-        "matched_terms" => array()
-    );
+   $result = array(
+    "product_id" => $product_id,
+    "product_title" => $product_title,
+    "product_image_url" => isset($supplier_product["image_url"]) ? $supplier_product["image_url"] : 
+                          (isset($supplier_product["Image URL"]) ? $supplier_product["Image URL"] : ""),
+    "match_status" => "no_match",
+    "best_match" => null,
+    "matched_terms" => array()
+);
     
     // Check if product is already mapped
     $existing_mapping = $this->get_existing_mapping($supplier_name, $product_id);
@@ -3999,7 +4025,19 @@ private function handle_existing_mapping($existing_mapping, $result) {
     }
     
     try {
-        $processed_product = KT_Cigar_Mappings::process_supplier_product($product_title);
+        
+		// Extract dimensions from the product data if available
+$dimensions = "";
+if (isset($product["ring_gauge"]) && isset($product["length"])) {
+    $dimensions = $product["ring_gauge"] . "/" . $product["length"];
+}
+
+$processed_product = KT_Cigar_Mappings::process_supplier_product(
+    $product_title,
+    $dimensions,
+    isset($product["description"]) ? $product["description"] : ""
+);
+		
         $this->log_debug("KT_Cigar_Mappings extracted " . count($processed_product["keywords"] ?? []) . " keywords");
         
         // CRITICAL DEBUG: Log what brand was extracted
@@ -5837,7 +5875,17 @@ private function cleanup_expired_sessions() {
                 else if ($field_lower === "ring" || $field_lower === "ring_gauge" || $field_lower === "gauge" || $field_lower === "rg") {
                     $mapped_field = "ring_gauge";
                 }
-                // Length field detection
+               // Handle "Ring Size" from your CSV
+else if ($field_lower === "ring size" || $field_lower === "ringsize") {
+    $mapped_field = "ring_gauge";
+}
+// Handle "Image URL" from your CSV
+else if ($field_lower === "image url" || $field_lower === "imageurl" || $field_lower === "image_url") {
+    $mapped_field = "image_url";
+} 
+				
+				
+				// Length field detection
                 else if ($field_lower === "length" || $field_lower === "len") {
                     $mapped_field = "length";
                 }
@@ -6050,13 +6098,14 @@ $this->cleanup_expired_sessions();
                     }
                 }
             }
-            
-            // Only add rows with ID and Title
-            if (!empty($row_data["id"]) && !empty($row_data["title"])) {
-                $data_rows[] = $row_data;
-                $row_count++;
-            }
-        }
+           // Only add rows with ID and Title
+if (!empty($row_data["id"]) && !empty($row_data["title"])) {
+    $data_rows[] = $row_data;
+    $row_count++;
+}
+      
+		}
+		
         
         fclose($handle);
         
