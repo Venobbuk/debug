@@ -338,28 +338,23 @@ private static function extractBrandFromDataFile($title) {
                     return $brand;
                 }
                 
-                // Check each variation - FIXED LOOP STRUCTURE
-                foreach ($variations as $variation) {
-                    $variation_lower = mb_strtolower($variation);
-                    
-                    if (mb_strpos($title_lower, $variation_lower) === 0 || 
-                        mb_strpos($title_lower, ' ' . $variation_lower) !== false ||
-                        mb_strpos($title_lower, $variation_lower . ' ') !== false) {
-                        
-                        KT_Cigar_Debug::log("FOUND via variation: '" . $variation . "' -> '" . $brand . "' in " . $section);
-                        KT_Cigar_Debug::log("=== END BRAND EXTRACTION ===");
-                        return $brand;
-                    }
-                }
-            }
+             // Check each variation - FIXED LOOP STRUCTURE
+if (is_array($variations)) {
+    foreach ($variations as $variation) {
+        if (empty($variation)) continue;
+        
+        $variation_lower = mb_strtolower($variation);
+        
+        if (mb_strpos($title_lower, $variation_lower) === 0 || 
+            mb_strpos($title_lower, ' ' . $variation_lower) !== false ||
+            mb_strpos($title_lower, $variation_lower . ' ') !== false) {
+            
+            KT_Cigar_Debug::log("FOUND via variation: '" . $variation . "' -> '" . $brand . "' in " . $section);
+            KT_Cigar_Debug::log("=== END BRAND EXTRACTION ===");
+            return $brand;
         }
     }
-    
-    KT_Cigar_Debug::log("ERROR: No brand found for title: " . $title);
-    KT_Cigar_Debug::log("=== END BRAND EXTRACTION ===");
-    return null;
 }
-    
     /**
      * Extract series using data file (replaces hardcoded series extraction)
      */
