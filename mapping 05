@@ -141,16 +141,20 @@ class KT_Cigar_Mappings {
         KT_Cigar_Debug::log("Title contains Chinese characters: " . ($has_chinese_chars ? "Yes" : "No"));
         
         // Step 2: Extract brand using data file mappings and aliases
-        // First check brand aliases for any language
-        if (!empty(self::$data_file['brand_aliases'])) {
-            foreach (self::$data_file['brand_aliases'] as $alias => $english_brand) {
-                if (mb_stripos($normalized_title, mb_strtolower($alias)) !== false) {
-                    $result["brand"] = $english_brand;
-                    KT_Cigar_Debug::log("Extracted brand from alias: " . $alias . " -> " . $english_brand);
-                    break;
-                }
-            }
+// First check brand aliases for any language
+if (!empty(self::$data_file['brand_aliases'])) {
+    foreach (self::$data_file['brand_aliases'] as $alias => $english_brand) {
+        $alias_lower = mb_strtolower($alias);
+        // Check if title starts with the alias OR has it as a separate word
+        if (mb_strpos($normalized_title, $alias_lower) === 0 || 
+            mb_strpos($normalized_title, ' ' . $alias_lower . ' ') !== false ||
+            mb_strpos($normalized_title, ' ' . $alias_lower) !== false) {
+            $result["brand"] = $english_brand;
+            KT_Cigar_Debug::log("Extracted brand from alias: " . $alias . " -> " . $english_brand);
+            break;
         }
+    }
+}
 
         // If no brand found via aliases, check brand variations more thoroughly
         if (empty($result["brand"])) {
@@ -805,6 +809,16 @@ class KT_Cigar_Mappings {
         return array_unique($variations);
     }
     
+	/**
+ * Get the data file (for use by other classes)
+ */
+public static function get_data_file() {
+    self::init();
+    return self::$data_file;
+}
+	
+	
+	
     /**
      * Get series for a specific brand
      */
@@ -966,6 +980,68 @@ class KT_Cigar_Mappings {
         
         return array_slice($log_lines, -$lines);
     }
+	
+	/**
+ * Check if two brands are the same (considering aliases and variations)
+ */
+public static function is_same_brand($brand1, $brand2) {
+    self::init();
+    
+    // Direct match
+    if (mb_strtolower($brand1) === mb_strtolower($brand2)) {
+        return true;
+    }
+    
+    // Check if both resolve to same main brand through aliases
+    $main_brand1 = self::get_main_brand($brand1);
+    $main_brand2 = self::get_main_brand($brand2);
+    
+    if ($main_brand1 && $main_brand2 && mb_strtolower($main_brand1) === mb_strtolower($main_brand2)) {
+        return true;
+    }
+    
+    // Check variations
+    $variations1 = self::get_brand_variations($brand1);
+    $variations2 = self::get_brand_variations($brand2);
+    
+    foreach ($variations1 as $var1) {
+        if (in_array(mb_strtolower($var1), array_map('mb_strtolower', $variations2))) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Get main brand from alias
+ */
+public static function get_main_brand($brand) {
+    self::init();
+    
+    // Check if it's an alias
+    if (!empty(self::$data_file['brand_aliases'])) {
+        foreach (self::$data_file['brand_aliases'] as $alias => $main_brand) {
+            if (mb_strtolower($alias) === mb_strtolower($brand)) {
+                return $main_brand;
+            }
+        }
+    }
+    
+    // Check if it's already a main brand
+    foreach (['cuban', 'non_cuban'] as $section) {
+        if (isset(self::$data_file['brands'][$section][$brand])) {
+            return $brand;
+        }
+    }
+    
+    return $brand;
+}
+	
+	
+	
+	
+	
 }
 
 // Initialize the class when the file is loaded
