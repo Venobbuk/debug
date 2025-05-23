@@ -1978,15 +1978,10 @@ public static function get_main_brand($brand) {
             }
         }
         
-        return $results;
+      return $results;
     }
-
-} // End of KT_Cigar_Mappings class
-
-
-
+}
 // Initialize the class when file is loaded
 add_action('init', function() {
     KT_Cigar_Mappings::init();
 });
-
