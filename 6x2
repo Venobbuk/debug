@@ -74,6 +74,8 @@ class KT_Cigar_Enhanced_Matcher {
     add_action("wp_ajax_kt_cigar_matcher_toggle_logging", array($this, "ajax_toggle_logging"));
     add_action('admin_init', array($this, 'init_database_preprocessing'));
     add_action("wp_ajax_kt_cigar_matcher_debug_keywords", array($this, "ajax_debug_keywords"));
+		add_action("wp_ajax_kt_cigar_matcher_check_keywords_table", array($this, "ajax_check_keywords_table"));
+
     add_action("wp_ajax_kt_cigar_matcher_clear_cache", array($this, "ajax_clear_cache"));
     add_action("wp_ajax_kt_cigar_matcher_diagnose_brand", array($this, "ajax_diagnose_brand_extraction"));
     add_action("wp_ajax_kt_cigar_matcher_debug_brand_comparison", array($this, "ajax_debug_brand_comparison"));
@@ -241,41 +243,98 @@ public function init_database_preprocessing() {
 	/**
  * Get keywords from database table by SKU
  */
+	
+	
+	
 private function get_keywords_from_table($sku) {
     global $wpdb;
     $keywords_table = $wpdb->prefix . 'kt_cigar_processed_keywords';
     
-    // Check if table exists
-    if ($wpdb->get_var("SHOW TABLES LIKE '$keywords_table'") != $keywords_table) {
-        $this->log_debug("Keywords table doesn't exist, using fallback for SKU: $sku");
-        return array("FULL:" . strtolower($sku));
-    }
-	// Also check if table has any data
-$row_count = $wpdb->get_var("SELECT COUNT(*) FROM $keywords_table");
-if ($row_count == 0) {
-    $this->log_debug("Keywords table is empty, needs population");
-    // Optionally trigger a rebuild here
-    return $this->get_potential_database_matches_cache($processed_product);
-}
-    
-    // Get keywords for this SKU
-    $result = $wpdb->get_var($wpdb->prepare(
+    $result = $wpdb->get_row($wpdb->prepare(
         "SELECT keywords FROM $keywords_table WHERE sku = %s",
         $sku
     ));
     
-    if (!empty($result)) {
-        $decoded_keywords = json_decode($result, true);
+    if ($result && !empty($result->keywords)) {
+        $decoded_keywords = json_decode($result->keywords, true);
         if (is_array($decoded_keywords) && !empty($decoded_keywords)) {
             $this->log_debug("Retrieved " . count($decoded_keywords) . " keywords from table for SKU: $sku");
             return $decoded_keywords;
         }
     }
     
-    // Fallback
-    $this->log_debug("No keywords found in table for SKU: $sku, using fallback");
-    return array("FULL:" . strtolower($sku));
+    // Generate keywords if not found
+    $this->log_debug("No keywords found in table for SKU: $sku, generating new ones");
+    return $this->generate_keywords_for_sku($sku);
 }
+
+	
+/**
+ * Generate keywords for a SKU and store in table
+ */
+private function generate_keywords_for_sku($sku) {
+    global $wpdb;
+    $master_table = $wpdb->prefix . $this->master_table;
+    
+    $product = $wpdb->get_row($wpdb->prepare(
+        "SELECT sku, product_title, brand, seat_row, seat_number FROM $master_table WHERE sku = %s",
+        $sku
+    ));
+    
+    if (!$product) {
+        return array("FULL:" . strtolower($sku));
+    }
+    
+    $dimensions = "";
+    if (!empty($product->seat_row) || !empty($product->seat_number)) {
+        $dimensions = $product->seat_row . "/" . $product->seat_number;
+    }
+    
+    $keywords = array("FULL:" . strtolower($product->product_title));
+    
+    if (class_exists('KT_Cigar_Mappings')) {
+        try {
+            $processed = KT_Cigar_Mappings::process_internal_product(
+                $product->product_title,
+                $product->brand,
+                "",
+                "",
+                $dimensions
+            );
+            
+            if (!empty($processed["keywords"]) && is_array($processed["keywords"])) {
+                $keywords = $processed["keywords"];
+            }
+        } catch (Exception $e) {
+            $this->log_debug("Error generating keywords: " . $e->getMessage());
+        }
+    }
+    
+    // Store in table
+    $keywords_table = $wpdb->prefix . 'kt_cigar_processed_keywords';
+    $wpdb->replace(
+        $keywords_table,
+        array(
+            'sku' => $product->sku,
+            'product_title' => $product->product_title,
+            'brand' => $product->brand,
+            'keywords' => json_encode($keywords),
+            'keyword_count' => count($keywords),
+            'last_processed' => current_time('mysql')
+        )
+    );
+    
+    $this->log_debug("Generated " . count($keywords) . " keywords for SKU: $sku");
+    return $keywords;
+}	
+	
+	
+	
+	
+	
+	
+	
+	
 	
 	
 	
