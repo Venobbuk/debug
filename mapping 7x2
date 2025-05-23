@@ -803,16 +803,38 @@ private static function extractKeywordsFromDataFile($title, $extracted_data) {
         }
     }
     
-    // EMERGENCY FALLBACK
-    if (empty($keywords)) {
-        $keywords[] = "FULL:" . mb_strtolower($title);
-        KT_Cigar_Debug::log("EMERGENCY: Added full title as keyword");
+// EMERGENCY FALLBACK - ensure we always have keywords
+if (empty($keywords) || count($keywords) === 0) {
+    $keywords[] = "FULL:" . mb_strtolower($title);
+    
+    // Extract basic terms as backup
+    if (preg_match_all('/[\x{4e00}-\x{9fa5}]{2,}/u', $title, $matches)) {
+        foreach ($matches[0] as $word) {
+            if (mb_strlen($word) >= 2) {
+                $keywords[] = $word;
+            }
+        }
     }
     
-    KT_Cigar_Debug::log("Final keywords: " . json_encode($keywords));
-    KT_Cigar_Debug::log("=== END KEYWORD EXTRACTION ===");
+    if (preg_match_all('/[a-zA-Z]{3,}/', $title, $matches)) {
+        foreach ($matches[0] as $word) {
+            $keywords[] = strtolower($word);
+        }
+    }
     
-    return $keywords;
+    if (preg_match_all('/\d+/', $title, $matches)) {
+        foreach ($matches[0] as $num) {
+            $keywords[] = "NUM:" . $num;
+        }
+    }
+    
+    KT_Cigar_Debug::log("EMERGENCY: Added " . count($keywords) . " keywords");
+}
+
+KT_Cigar_Debug::log("Final keywords: " . json_encode($keywords));
+KT_Cigar_Debug::log("=== END KEYWORD EXTRACTION ===");
+
+return $keywords;
 }
 /**
  * Check if a term is meaningful based on data file categories
