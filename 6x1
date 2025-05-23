@@ -4341,20 +4341,18 @@ private function get_potential_database_matches($processed_product) {
     // Build query with better filtering
     $where_conditions = array("(product_type = 'cigar' OR product_type = '')");
     $where_params = array();
-    
-    // CRITICAL: If we have a brand, ONLY get products from that brand
-    if (!empty($brand)) {
-        // IMPORTANT CHANGE: Use exact match only for brand to avoid wrong brand matches
-        $where_conditions[] = "brand = %s";
-        $where_params[] = $brand;
-        
-        // Don't use LIKE for brand - it causes wrong matches
-        // Example: "Bolivar" might match "Bolivar Royal" which is different
-    } else {
-        // NEW: If no brand extracted, log warning and return empty
-        $this->log_debug("WARNING: No brand extracted from supplier product - skipping database search to avoid wrong matches");
-        return array();
-    }
+   // If we have a brand, prefer that brand but don't make it exclusive
+if (!empty($brand)) {
+    // Use flexible brand matching
+    $where_conditions[] = "(brand LIKE %s OR product_title LIKE %s)";
+    $where_params[] = '%' . $wpdb->esc_like($brand) . '%';
+    $where_params[] = '%' . $wpdb->esc_like($brand) . '%';
+    $this->log_debug("Searching with brand filter: " . $brand);
+} else {
+    // If no brand extracted, still search but log warning  
+    $this->log_debug("WARNING: No brand extracted - searching all products");
+    // Don't add brand restriction - search all products
+}
     
     // Add model filter if available (keep using LIKE for flexibility)
     if (!empty($model)) {
@@ -4377,11 +4375,24 @@ private function get_potential_database_matches($processed_product) {
     if (!empty($where_params)) {
         $query = $wpdb->prepare($query, $where_params);
     }
-    
     $results = $wpdb->get_results($query);
-    $this->log_debug("Found " . count($results) . " potential matches for brand: " . $brand);
-    
-    return $results;
+$this->log_debug("Found " . count($results) . " potential matches for brand: " . $brand);
+
+// Convert objects to arrays for KT_Cigar_Mappings
+$formatted_results = array();
+foreach ($results as $result) {
+    $formatted_results[] = array(
+        'id' => $result->id,
+        'sku' => $result->sku,
+        'title' => $result->product_title,
+        'brand' => $result->brand,
+        'dimensions' => (!empty($result->seat_row) || !empty($result->seat_number)) ? 
+            $result->seat_row . '/' . $result->seat_number : ''
+    );
+}
+
+return $formatted_results;
+	
 }
 
 /**
