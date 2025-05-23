@@ -4369,12 +4369,14 @@ private function process_best_match($best_match, $result, $processed_product) {
 private function extract_brand_from_title($title) {
     $this->log_debug("Extracting brand from: " . $title);
     
-    // Clean the title
-    $title = $this->clean_title($title);
-    $title_lower = mb_strtolower($title, 'UTF-8');
+  
+	// Clean the title
+  $title = trim(strip_tags($title));
+   
+	$title_lower = mb_strtolower($title, 'UTF-8');
     
     // Load brand mappings
-    $brand_data = $this->load_brand_mappings();
+$brand_data = $this->load_data_file();
     
     $best_match = null;
     $best_score = 0;
