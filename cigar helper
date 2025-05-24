@@ -20,13 +20,19 @@ class KT_Cigar_Helper {
         // Convert to lowercase
         $title = mb_strtolower(trim($title));
         
-        // Keep only basic noise words that don't affect brand matching
-$noise_words = array('cigar', 'cigars', 'box', 'pack', 'tube');
-
-foreach ($noise_words as $word) {
-    $title = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', ' ', $title);
-}
-
+        // Remove common noise words and characters
+        $noise_words = array(
+            'cigar', 'cigars', 'cigarillo', 'cigarillos',
+            'original', 'genuine', 'authentic', 'official',
+            'new', 'brand', 'box', 'pack', 'tube', 'tubos',
+            'limited', 'edition', 'special', 'exclusive',
+            'premium', 'classic', 'traditional', 'collection'
+        );
+        
+        // Replace noise words with spaces
+        foreach ($noise_words as $word) {
+            $title = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', ' ', $title);
+        }
         
         // Remove special characters
         $title = preg_replace('/[^\p{L}\p{N}\s\-]/u', ' ', $title);
@@ -93,15 +99,10 @@ foreach ($noise_words as $word) {
             
             // Brand match (highest weight)
             if (!empty($supplier_processed['brand']) && !empty($product->brand)) {
-               $brand_similarity = 0;
-similar_text(mb_strtolower($supplier_processed['brand']), mb_strtolower($product->brand), $brand_similarity);
-if ($brand_similarity >= 70) {
-    $score += 40;
-    $current_matched_terms[] = "BRAND:" . $product->brand;
-} else if ($brand_similarity >= 50) {
-    $score += 25; // Partial brand match
-}
-
+                if (mb_strtolower($supplier_processed['brand']) === mb_strtolower($product->brand)) {
+                    $score += 40;
+                    $current_matched_terms[] = "BRAND:" . $product->brand;
+                }
             }
             
             // Vitola match
@@ -307,22 +308,7 @@ if ($brand_similarity >= 70) {
         
         return $result;
     }
-  /**
- * Check for exact brand substring matches
- */
-public static function check_brand_substring_match($supplier_title, $db_brand) {
-    $supplier_clean = mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $supplier_title));
-    $brand_clean = mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $db_brand));
     
-    // Check if brand appears as substring
-    if (strpos($supplier_clean, $brand_clean) !== false || 
-        strpos($brand_clean, $supplier_clean) !== false) {
-        return true;
-    }
-    
-    return false;
-}
-  
     /**
      * Detect product type from title and description
      * 
