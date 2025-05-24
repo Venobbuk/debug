@@ -352,16 +352,16 @@ class KT_Cigar_Mappings {
                     }
                     
                     // Check each variation - FIXED LOOP STRUCTURE
-                    if (is_array($variations)) {
-                        foreach ($variations as $variation) {
-                            $variation_lower = mb_strtolower($variation);
+                    foreach ($variations as $variation) {
+                        $variation_lower = mb_strtolower($variation);
+                        
+                        if (mb_strpos($title_lower, $variation_lower) === 0 || 
+                            mb_strpos($title_lower, ' ' . $variation_lower) !== false ||
+                            mb_strpos($title_lower, $variation_lower . ' ') !== false) {
                             
-                            // More flexible matching - allow substring matches anywhere in title
-                            if (mb_strpos($title_lower, $variation_lower) !== false) {
-                                KT_Cigar_Debug::log("FOUND via variation: '" . $variation . "' -> '" . $brand . "' in " . $section);
-                                KT_Cigar_Debug::log("=== END BRAND EXTRACTION ===");
-                                return $brand;
-                            }
+                            KT_Cigar_Debug::log("FOUND via variation: '" . $variation . "' -> '" . $brand . "' in " . $section);
+                            KT_Cigar_Debug::log("=== END BRAND EXTRACTION ===");
+                            return $brand;
                         }
                     }
                 }
@@ -372,7 +372,6 @@ class KT_Cigar_Mappings {
         KT_Cigar_Debug::log("=== END BRAND EXTRACTION ===");
         return null;
     }
-
     
     /**
      * Extract series using data file (replaces hardcoded series extraction)
@@ -833,17 +832,7 @@ class KT_Cigar_Mappings {
        
        return $keywords;
    }
-  
-	/**
- * Check if two brands are the same - PUBLIC method
- */
-public static function is_same_brand($brand1, $brand2) {
-    return self::isSameBrandUsingDataFile($brand1, $brand2);
-}
-
-	
-	
-	
+   
    /**
     * Check if a term is meaningful based on data file categories
     */
@@ -940,24 +929,11 @@ public static function is_same_brand($brand1, $brand2) {
        $filtered = preg_replace('/\s+/', ' ', $filtered);
        return trim($filtered);
    }
-  
-	/**
- * Get data file - PUBLIC method
- */
-public static function get_data_file() {
-    self::init();
-    return self::$data_file;
-}
-
-	
-	
-	
-	
+   
    /**
     * HYBRID MATCHING - Main entry point
     */
- public static function match_products($supplier_data, $internal_products, $threshold = 0.25) {
-
+   public static function match_products($supplier_data, $internal_products, $threshold = 0.3) {
        self::init();
        
        KT_Cigar_Debug::log("Starting hybrid matching for: " . (is_array($supplier_data) ? $supplier_data['title'] : $supplier_data));
@@ -1560,14 +1536,13 @@ public static function get_data_file() {
    private static function calculateHybridScore($scores) {
       // Fix the scoring to reward perfect matches
 $final_score = (
-    $scores['exact'] * 0.35 +           // Reduced exact match weight
-    $scores['fuzzy'] * 0.30 +           // Increased fuzzy weight
+    $scores['exact'] * 0.40 +           // Increase exact match weight
+    $scores['fuzzy'] * 0.25 +
     $scores['semantic'] * 0.15 +
-    $scores['title'] * 0.12 +           // Increased title weight
-    $scores['keyword'] * 0.06 +         // Increased keyword weight
-    $scores['compatibility'] * 0.02     // Reduced compatibility penalty
+    $scores['title'] * 0.10 +
+    $scores['keyword'] * 0.05 +
+    $scores['compatibility'] * 0.05
 );
-
 
 // Remove the harsh compatibility penalty - let good matches through
 if ($final_score > 0.8) {
