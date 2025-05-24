@@ -4700,31 +4700,36 @@ private function calculate_match_scores($supplier_data, $db_data) {
     
     // CRITICAL: Brand matching is MANDATORY
     $brand_matched = false;
-    
     if (!empty($supplier_data['brand']) && !empty($db_data['brand'])) {
-        // Use KT_Cigar_Mappings to check if brands are the same
-        if (class_exists('KT_Cigar_Mappings')) {
-            $brand_matched = KT_Cigar_Mappings::is_same_brand($supplier_data['brand'], $db_data['brand']);
-        } else {
-            $brand_matched = (mb_strtolower($supplier_data['brand']) === mb_strtolower($db_data['brand']));
+    // Use KT_Cigar_Mappings to check if brands are the same
+    if (class_exists('KT_Cigar_Mappings')) {
+        $brand_matched = KT_Cigar_Mappings::is_same_brand($supplier_data['brand'], $db_data['brand']);
+    } else {
+        $brand_matched = (mb_strtolower($supplier_data['brand']) === mb_strtolower($db_data['brand']));
+    }
+    
+    // ADDED: Also check for substring matches if exact match fails
+    if (!$brand_matched) {
+        $brand_similarity = 0;
+        similar_text(mb_strtolower($supplier_data['brand']), mb_strtolower($db_data['brand']), $brand_similarity);
+        if ($brand_similarity >= 70) {
+            $brand_matched = true;
         }
+    }
+
         
         if ($brand_matched) {
             $scores['brand'] = 5.0;
             $this->log_debug("Brand match: {$supplier_data['brand']} == {$db_data['brand']}");
-        } else {
-            $this->log_debug("Brand mismatch: {$supplier_data['brand']} != {$db_data['brand']}");
-            // Return zero scores for everything if brands don't match
-            return array(
-                'brand' => 0.0,
-                'model' => 0.0,
-                'vitola' => 0.0,
-                'special' => 0.0,
-                'year' => 0.0,
-                'dimension' => 0.0,
-                'keyword' => 0.0
-            );
-        }
+       
+	} else {
+    $this->log_debug("Brand mismatch: {$supplier_data['brand']} != {$db_data['brand']}");
+    // Give partial credit instead of complete rejection
+    $scores['brand'] = 0.1; // Small brand score to allow matching to continue
+    $brand_matched = true; // Allow other scoring to proceed
+}
+
+		
     } else if (empty($supplier_data['brand']) && empty($db_data['brand'])) {
         // Both missing brand - allow but with lower score
         $scores['brand'] = 1.0;
@@ -5354,21 +5359,28 @@ private function calculate_category_bonuses($category_matches) {
  */
 private function calculate_final_score($scores) {
     // Adjusted weights - brand and model are most important
-    $score = ($scores['brand'] * 8.0) +      // Increased brand weight
-            ($scores['model'] * 6.0) +       // Increased model weight
-            ($scores['vitola'] * 4.0) +      
-            ($scores['special'] * 3.0) + 
-            ($scores['year'] * 3.0) + 
-            ($scores['dimension'] * 3.0) + 
-            ($scores['keyword'] * 1.0);      // Reduced keyword weight
+   $score = ($scores['brand'] * 6.0) +      // Reduced brand weight
+        ($scores['model'] * 5.0) +       // Reduced model weight
+        ($scores['vitola'] * 4.0) +      
+        ($scores['special'] * 3.0) + 
+        ($scores['year'] * 3.0) + 
+        ($scores['dimension'] * 4.0) +   // Increased dimension weight
+        ($scores['keyword'] * 2.0);      // Increased keyword weight
+
+    $max_possible_score = (6.0 * 5.0) + (5.0 * 4.0) + (4.0 * 3.0) + 
+                     (3.0 * 3.0) + (3.0 * 3.0) + (4.0 * 3.0) + 
+                     (2.0 * 10.0);
+
     
-    // Calculate maximum possible score with new weights
-    $max_possible_score = (8.0 * 5.0) + (6.0 * 4.0) + (4.0 * 3.0) + 
-                         (3.0 * 3.0) + (3.0 * 3.0) + (3.0 * 3.0) + 
-                         (1.0 * 15.0);
-    
-    // Normalize score to 0-100 scale
-    return min(100, round(($score / $max_possible_score) * 100, 1));
+    $percentage = ($score / $max_possible_score) * 100;
+
+// Add boost for strong brand matches
+if ($scores['brand'] >= 4.0) {
+    $percentage *= 1.3; // 30% boost for good brand matches
+}
+
+return min(95, round($percentage, 1));
+
 }
 /**
  * Add this method to debug specific mismatches
@@ -5424,17 +5436,18 @@ private function determine_match_type($normalized_score, $brand_score) {
         return "No Match";
     }
     
-    // Stricter thresholds
-    if ($normalized_score >= 90) {
+    // MUCH MORE GENEROUS thresholds
+    if ($normalized_score >= 75) {        // Reduced from 90
         return "Exact Match";
-    } else if ($normalized_score >= 75) {
-        return "Close Match";
-    } else if ($normalized_score >= 60) {
+    } else if ($normalized_score >= 65) {  // Reduced from 75
+        return "Close Match";  
+    } else if ($normalized_score >= 50) {  // Reduced from 60
         return "Possible Match";
     } else {
         return "No Match";
     }
 }
+
 
 
 /**
