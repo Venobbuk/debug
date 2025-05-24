@@ -116,13 +116,14 @@ private function ensure_kt_mappings_loaded() {
         return false;
     }
     
-    // Check if required methods exist
-    $required_methods = array('process_supplier_product', 'process_internal_product', 'get_main_brand');
-    foreach ($required_methods as $method) {
-        if (!method_exists('KT_Cigar_Mappings', $method)) {
-            $this->log_debug("Required method $method not found in KT_Cigar_Mappings");
-            return false;
-        }
+    // FORCE initialization 
+    KT_Cigar_Mappings::init(true);
+    
+    // Test if data file loaded
+    $test_result = KT_Cigar_Mappings::process_supplier_product("test");
+    if (empty($test_result) || !isset($test_result['keywords'])) {
+        $this->log_debug("CRITICAL: KT_Cigar_Mappings not working - test failed");
+        return false;
     }
     
     return true;
@@ -170,9 +171,28 @@ public function initialize_kt_mappings_now() {
     }
 }
 	
-	
-	
-	
+/**
+ * Display unmatched brands at the top of results
+ */
+private function display_unmatched_brands_summary($results) {
+    $unmatched_brands = array();
+    
+    foreach ($results as $result) {
+        if ($result['match_status'] === 'no_match' && !empty($result['extracted_brand']) && $result['extracted_brand'] !== 'NONE') {
+            $unmatched_brands[] = $result['extracted_brand'];
+        }
+    }
+    
+    $unique_brands = array_unique($unmatched_brands);
+    
+    if (!empty($unique_brands)) {
+        echo '<div style="background: #ffe6e6; padding: 15px; margin-bottom: 20px; border: 1px solid #ff9999; border-radius: 4px;">';
+        echo '<h3 style="margin-top: 0; color: #d63384;">⚠️ Brands Not Found in Database:</h3>';
+        echo '<p style="margin-bottom: 0;"><strong style="color: #721c24;">' . implode(', ', $unique_brands) . '</strong></p>';
+        echo '<p style="margin-bottom: 0; margin-top: 10px; font-size: 12px; color: #856404;"><em>Add these brand mappings to your data file to improve matching</em></p>';
+        echo '</div>';
+    }
+}	
 
 	
 	
@@ -279,15 +299,15 @@ if ($row_count == 0) {
 	
 	
 	
-	/**
- * Pre-process all database products for keywords (called during plugin init)
+/**
+ * Pre-process database products with memory optimization
  */
 private function preprocess_all_database_products() {
     global $wpdb;
     $master_table = $wpdb->prefix . $this->master_table;
     
-    // Check if we already have cached processed products
-    $cache_key = 'kt_cigar_processed_db_products_v2';
+    // Check cache first
+    $cache_key = 'kt_cigar_processed_db_products_v3';
     $cached_products = get_transient($cache_key);
     
     if ($cached_products !== false) {
@@ -295,103 +315,86 @@ private function preprocess_all_database_products() {
         return $cached_products;
     }
     
-    // Get all database products
-    $query = "SELECT id, sku, product_title, brand, seat_row, seat_number 
-              FROM $master_table 
-              WHERE (product_type = 'cigar' OR product_type = '') 
-              ORDER BY brand ASC, sku ASC";
-    
-    $all_products = $wpdb->get_results($query);
+    // MEMORY OPTIMIZATION: Process in smaller batches
+    $batch_size = 100; // Process 100 products at a time
+    $offset = 0;
     $processed_products = array();
     
-    $this->log_debug("Pre-processing " . count($all_products) . " database products for keywords...");
+    $this->log_debug("Starting optimized database product processing...");
     
-    foreach ($all_products as $db_product) {
-        $dimensions = "";
-        if (!empty($db_product->seat_row) || !empty($db_product->seat_number)) {
-            $dimensions = (!empty($db_product->seat_row) ? $db_product->seat_row : "") . "/" . 
-                          (!empty($db_product->seat_number) ? $db_product->seat_number : "");
+    do {
+        // Get batch of products
+        $query = "SELECT id, sku, product_title, brand, seat_row, seat_number 
+                  FROM $master_table 
+                  WHERE (product_type = 'cigar' OR product_type = '') 
+                  ORDER BY brand ASC, sku ASC
+                  LIMIT $batch_size OFFSET $offset";
+        
+        $batch_products = $wpdb->get_results($query);
+        
+        if (empty($batch_products)) {
+            break; // No more products
         }
         
-     // Extract keywords NOW - with better error handling
-$processed = array();
-if (!$this->ensure_kt_mappings_loaded()) {
-    $this->log_debug("KT_Cigar_Mappings not available, using fallback");
-    return array("keywords" => array("FULL:" . strtolower($product_title)));
-}
-		
-if (class_exists('KT_Cigar_Mappings')) {
-	
-	
-	
-	
-    try {
-        $processed = KT_Cigar_Mappings::process_internal_product(
-            $db_product->sku,
-            $db_product->product_title,
-            $dimensions
-        );
-		// ADD THIS DEBUG LOGGING:
-    if (in_array($db_product->sku, ['DV001', 'DV042', 'MC001'])) { // Debug specific SKUs
-        $this->log_debug("=== DB PRODUCT KEYWORD EXTRACTION DEBUG ===");
-        $this->log_debug("SKU: " . $db_product->sku);
-        $this->log_debug("Title: " . $db_product->product_title);
-        $this->log_debug("Dimensions: " . $dimensions);
-        $this->log_debug("Extracted keywords count: " . count($processed["keywords"] ?? []));
-        $this->log_debug("Extracted keywords: " . json_encode($processed["keywords"] ?? []));
-        $this->log_debug("=== END DEBUG ===");
-    }
+        $this->log_debug("Processing batch starting at offset $offset with " . count($batch_products) . " products");
         
-        // Ensure keywords array exists and has content
-        if (empty($processed["keywords"]) || !is_array($processed["keywords"])) {
-            $processed["keywords"] = array("FULL:" . strtolower($db_product->product_title));
-            $this->log_debug("WARNING: No keywords from KT_Cigar_Mappings for " . $db_product->sku . ", using fallback");
+        foreach ($batch_products as $db_product) {
+            // SIMPLIFIED processing to reduce memory usage
+            $dimensions = "";
+            if (!empty($db_product->seat_row) || !empty($db_product->seat_number)) {
+                $dimensions = (!empty($db_product->seat_row) ? $db_product->seat_row : "") . "/" . 
+                              (!empty($db_product->seat_number) ? $db_product->seat_number : "");
+            }
+            
+            // MINIMAL keyword extraction to save memory
+            $keywords = array();
+            if (class_exists('KT_Cigar_Mappings')) {
+                try {
+                    $processed = KT_Cigar_Mappings::process_internal_product(
+                        $db_product->sku,
+                        $db_product->product_title,
+                        $dimensions
+                    );
+                    $keywords = !empty($processed["keywords"]) ? $processed["keywords"] : array("FULL:" . strtolower($db_product->product_title));
+                } catch (Exception $e) {
+                    $keywords = array("FULL:" . strtolower($db_product->product_title));
+                }
+            } else {
+                $keywords = array("FULL:" . strtolower($db_product->product_title));
+            }
+            
+            // Store ONLY essential data
+            $processed_products[$db_product->sku] = array(
+                'sku' => $db_product->sku,
+                'title' => $db_product->product_title,
+                'brand' => $db_product->brand,
+                'keywords' => $keywords
+            );
+            
+            // MEMORY CLEANUP: Unset variables
+            unset($keywords, $dimensions, $processed);
         }
-    } catch (Exception $e) {
-        $this->log_debug("ERROR: KT_Cigar_Mappings failed for " . $db_product->sku . ": " . $e->getMessage());
-        $processed = array(
-            "sku" => $db_product->sku,
-            "title" => $db_product->product_title,
-            "keywords" => array("FULL:" . strtolower($db_product->product_title))
-        );
-    }
-} else {
-    // Fallback - minimal processing
-    $processed = array(
-        "sku" => $db_product->sku,
-        "title" => $db_product->product_title,
-        "keywords" => array("FULL:" . strtolower($db_product->product_title))
-    );
-}
-
-// Force add basic keywords if still empty
-if (empty($processed["keywords"])) {
-    $processed["keywords"] = array("FULL:" . strtolower($db_product->product_title));
-    $this->log_debug("FORCED keywords for " . $db_product->sku);
-}
-        // Store the processed data
-        $processed_products[$db_product->sku] = array(
-            'sku' => $db_product->sku,
-            'id' => $db_product->id,
-            'title' => $db_product->product_title,
-            'brand' => $db_product->brand,
-            'seat_row' => $db_product->seat_row,
-            'seat_number' => $db_product->seat_number,
-            'keywords' => !empty($processed["keywords"]) ? $processed["keywords"] : array(),
-            'processed_data' => $processed
-        );
-    }
+        
+        // MEMORY CLEANUP: Unset batch
+        unset($batch_products);
+        
+        $offset += $batch_size;
+        
+        // MEMORY CHECK: Stop if getting too high
+        $memory_usage = memory_get_usage(true);
+        if ($memory_usage > 500 * 1024 * 1024) { // 500MB limit
+            $this->log_debug("MEMORY WARNING: Usage at " . round($memory_usage / 1024 / 1024) . "MB, stopping processing");
+            break;
+        }
+        
+    } while (true);
     
-    // Cache for 1 hour
-    set_transient($cache_key, $processed_products, 60 * 60);
+    // Cache for 30 minutes (shorter to allow updates)
+    set_transient($cache_key, $processed_products, 30 * 60);
     
-    $this->log_debug("Pre-processed and cached " . count($processed_products) . " database products");
+    $this->log_debug("Processed and cached " . count($processed_products) . " database products with memory optimization");
     return $processed_products;
 }
-	
-	
-	
-	
 	
 	
 	
@@ -3969,7 +3972,16 @@ private function process_supplier_product($supplier_product, $supplier_name) {
                               (isset($supplier_product["Image URL"]) ? $supplier_product["Image URL"] : ""),
         "match_status" => "no_match",
         "best_match" => null,
-        "matched_terms" => array()
+        "matched_terms" => array(),
+		"supplier_keywords" => "Processing...",  // ADD THIS LINE
+    "extracted_brand" => "NONE",             // ADD THIS LINE
+    "extracted_model" => "NONE"              // ADD THIS LINE
+		
+		
+		
+		
+		
+		
     );
     
     // Check if product is already mapped
@@ -3979,8 +3991,26 @@ private function process_supplier_product($supplier_product, $supplier_name) {
     }
     
     // Process with KT_Cigar_Mappings using HYBRID MATCHING
-    $processed_product = $this->process_product_with_mappings($product_title);
     
+	$processed_product = $this->process_product_with_mappings($product_title);
+   
+	// ALWAYS show what was extracted, even for no matches
+    $result["supplier_keywords"] = !empty($processed_product["keywords"]) ? 
+                                   implode(' ', $processed_product["keywords"]) : 
+                                   'No keywords extracted';
+    
+    // Keep the extracted data for debugging
+    $result["extracted_brand"] = $processed_product["brand"] ?? 'NONE';
+    $result["extracted_model"] = $processed_product["model"] ?? 'NONE';
+    $result["extracted_vitola"] = $processed_product["vitola"] ?? 'NONE';
+	
+	
+	
+	
+	
+	
+	
+	
     // ADD DEBUG HERE - After processing
     $this->log_debug("=== SUPPLIER PRODUCT PROCESSING RESULTS ===");
     $this->log_debug("Title: " . $product_title);
@@ -3993,7 +4023,19 @@ private function process_supplier_product($supplier_product, $supplier_name) {
     $this->log_debug("Keywords count: " . count($processed_product["keywords"] ?? []));
     $this->log_debug("Keywords: " . json_encode($processed_product["keywords"] ?? []));
     $this->log_debug("==========================================");
-    
+    // ALWAYS preserve supplier keywords for display (even for no matches)
+$result["matched_terms"] = !empty($processed_product["keywords"]) ? 
+                          $processed_product["keywords"] : 
+                          array("No keywords extracted");
+
+// Store extraction results for debugging
+$result["extracted_brand"] = $processed_product["brand"] ?? "NONE";
+$result["extracted_model"] = $processed_product["model"] ?? "NONE";
+$result["extracted_vitola"] = $processed_product["vitola"] ?? "NONE";
+	
+	
+	
+	
     // Get potential database matches
     $db_products = $this->get_potential_database_matches($processed_product);
     
@@ -4126,35 +4168,43 @@ private function handle_existing_mapping($existing_mapping, $result) {
     }
     
     try {
-        
-		// Extract dimensions from the product data if available
-$dimensions = "";
-if (isset($product["ring_gauge"]) && isset($product["length"])) {
-    $dimensions = $product["ring_gauge"] . "/" . $product["length"];
-}
-
-$processed_product = KT_Cigar_Mappings::process_supplier_product(
-    $product_title,
-    $dimensions,
-    isset($product["description"]) ? $product["description"] : ""
-);
-		
-        $this->log_debug("KT_Cigar_Mappings extracted " . count($processed_product["keywords"] ?? []) . " keywords");
-        
-        // CRITICAL DEBUG: Log what brand was extracted
-        $extracted_brand = $processed_product["brand"] ?? "NONE";
-        $this->log_debug("BRAND EXTRACTION DEBUG: Title='$product_title' -> Extracted Brand='$extracted_brand'");
-        
-        return $processed_product;
-    } catch (Exception $e) {
-        $this->log_debug("ERROR in KT_Cigar_Mappings processing: " . $e->getMessage());
-        return array(
-            "title" => $product_title,
-            "keywords" => array("FULL:" . strtolower($product_title)),
-            "brand" => null,
-            "model" => null
-        );
+    // Extract dimensions from the product data if available
+    $dimensions = "";
+    if (isset($product["ring_gauge"]) && isset($product["length"])) {
+        $dimensions = $product["ring_gauge"] . "/" . $product["length"];
     }
+
+    $processed_product = KT_Cigar_Mappings::process_supplier_product(
+        $product_title,
+        $dimensions,
+        isset($product["description"]) ? $product["description"] : ""
+    );
+    
+    // IMPROVED DEBUGGING
+    $this->log_debug("KT_Cigar_Mappings SUCCESS for '$product_title':");
+    $this->log_debug("  - Brand: " . ($processed_product["brand"] ?? "NONE"));
+    $this->log_debug("  - Model: " . ($processed_product["model"] ?? "NONE"));
+    $this->log_debug("  - Keywords count: " . count($processed_product["keywords"] ?? []));
+    $this->log_debug("  - First 3 keywords: " . json_encode(array_slice($processed_product["keywords"] ?? [], 0, 3)));
+    
+    // FORCE FALLBACK if keywords are empty
+    if (empty($processed_product["keywords"]) || !is_array($processed_product["keywords"])) {
+        $this->log_debug("WARNING: Empty keywords, adding fallback for: $product_title");
+        $processed_product["keywords"] = array("FULL:" . strtolower($product_title));
+    }
+    
+    return $processed_product;
+} catch (Exception $e) {
+    $this->log_debug("ERROR in KT_Cigar_Mappings processing '$product_title': " . $e->getMessage());
+    return array(
+        "title" => $product_title,
+        "keywords" => array("FULL:" . strtolower($product_title)),
+        "brand" => null,
+        "model" => null
+    );
+}
+		
+		
 }
 
 /**
@@ -6992,8 +7042,25 @@ public function ajax_get_db_keywords() {
     ));
 }
 
-
-
+/**
+ * Normalize Chinese numbers and series names
+ */
+private function normalize_chinese_text($text) {
+    // Chinese number mappings
+    $chinese_numbers = array(
+        '世纪一' => 'siglo 1', '世纪二' => 'siglo 2', '世纪三' => 'siglo 3', 
+        '世纪四' => 'siglo 4', '世纪五' => 'siglo 5', '世纪六' => 'siglo 6',
+        '一' => '1', '二' => '2', '三' => '3', '四' => '4', '五' => '5', '六' => '6',
+        '七' => '7', '八' => '8', '九' => '9', '十' => '10'
+    );
+    
+    foreach ($chinese_numbers as $chinese => $english) {
+        $text = str_replace($chinese, $english, $text);
+    }
+    
+    return $text;
+ 
+}
 
 }
 
